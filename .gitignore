@@ -23,6 +23,4 @@ Thumbs.db
 # Godot export templates (downloaded by CI)
 export_templates/
 
-# Temporary exclusions for chunked pushes
-*.glb
-*.glb.import
+
