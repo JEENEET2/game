@@ -1,0 +1,63 @@
+name: "Build signed Android APK"
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Setup Java JDK 17"
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: "Setup Android SDK"
+        uses: android-actions/setup-android@v3
+
+      - name: "Create build directory"
+        run: |
+          mkdir -p project/build
+
+      - name: "Download Godot 4.3 Stable Headless"
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          unzip Godot_v4.3-stable_linux.x86_64.zip
+          mv Godot_v4.3-stable_linux.x86_64 project/
+          chmod +x project/Godot_v4.3-stable_linux.x86_64
+
+      - name: "Download Godot Export Templates"
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
+          unzip -q Godot_v4.3-stable_export_templates.tpz -d templates_temp
+          mkdir -p ~/.local/share/godot/export_templates/4.3.stable
+          mv templates_temp/templates/* ~/.local/share/godot/export_templates/4.3.stable/
+          rm -rf templates_temp Godot_v4.3-stable_export_templates.tpz Godot_v4.3-stable_linux.x86_64.zip
+
+      - name: "Decode Keystore"
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > /tmp/release.keystore
+
+      - name: "Export APK"
+        env:
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: /tmp/release.keystore
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.KEY_ALIAS }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        working-directory: project/
+        run: |
+          ./Godot_v4.3-stable_linux.x86_64 --headless --export-release "Android" ./build/wadi-e-kashmir.apk
+
+      - name: "Upload APK Artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: "wadi-e-kashmir-apk"
+          path: project/build/wadi-e-kashmir.apk
