@@ -44,6 +44,10 @@ jobs:
           mv templates_temp/templates/* ~/.local/share/godot/export_templates/4.3.stable/
           rm -rf templates_temp Godot_v4.3-stable_export_templates.tpz Godot_v4.3-stable_linux.x86_64.zip
 
+      - name: "Generate Debug Keystore"
+        run: |
+          keytool -genkey -v -keystore project/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
       - name: "Export APK"
         working-directory: project/
         run: |
