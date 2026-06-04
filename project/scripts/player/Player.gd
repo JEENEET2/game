@@ -29,7 +29,7 @@ const STAMINA_DRAIN: float  = 20.0
 const STAMINA_REGEN: float  = 10.0
 
 # ── Joystick & Camera Zones ───────────────────────────────────
-const JOYSTICK_ZONE_MAX_X: float  = 432.0
+var joystick_zone_max_x: float    = 432.0
 const JOYSTICK_DEADZONE: float    = 10.0
 const JOYSTICK_MAX_RADIUS: float  = 70.0
 const CAMERA_SENSITIVITY: float   = 0.005
@@ -69,6 +69,7 @@ var _camera_last_pos: Vector2 = Vector2.ZERO
 
 # Stub references for 2D compatibility
 var anim_sprite = null
+var _joystick_visual: Control = null
 
 # Gravity
 @onready var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
@@ -78,6 +79,19 @@ var anim_sprite = null
 # =============================================================
 func _ready() -> void:
 	add_to_group("player")
+	
+	# Instantiate virtual joystick visual overlay
+	var js_script = load("res://scripts/ui/JoystickVisual.gd")
+	if js_script:
+		_joystick_visual = Control.new()
+		_joystick_visual.set_script(js_script)
+		var mc = get_node_or_null("MobileControls")
+		if mc:
+			mc.add_child(_joystick_visual)
+	
+	# Setup mobile controls layout and register resize callback
+	_setup_mobile_controls()
+	get_viewport().size_changed.connect(_setup_mobile_controls)
 	
 	# HurtBox signals
 	hurt_box.body_entered.connect(_on_hurt_box_body_entered)
@@ -94,7 +108,7 @@ func _ready() -> void:
 	last_direction = Vector2.DOWN
 	
 	_update_weapon_label()
-	print("[Player3D] Combat Systems Initialized.")
+	print("[Player3D] Combat Systems and Virtual Joystick Initialized.")
 
 
 # =============================================================
@@ -117,21 +131,33 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			# Left side: Joystick
-			if event.position.x < JOYSTICK_ZONE_MAX_X and _joystick_touch_id == -1:
+			if event.position.x < joystick_zone_max_x and _joystick_touch_id == -1:
 				_joystick_touch_id = event.index
 				_joystick_start    = event.position
 				joystick_vector    = Vector2.ZERO
+				if _joystick_visual:
+					_joystick_visual.base_pos = event.position
+					_joystick_visual.drag_pos = event.position
+					_joystick_visual.active = true
+					_joystick_visual.queue_redraw()
 			# Right side: Camera drag
-			elif event.position.x >= JOYSTICK_ZONE_MAX_X and _camera_touch_id == -1:
-				# Skip buttons area: Bottom Right and Top Right
-				var is_button = (event.position.y > 1400 and event.position.x > 750) or (event.position.y < 250 and event.position.x > 800)
-				if not is_button:
+			elif event.position.x >= joystick_zone_max_x and _camera_touch_id == -1:
+				# Skip button touch areas dynamically
+				if not _is_touch_on_button(event.position):
 					_camera_touch_id = event.index
 					_camera_last_pos = event.position
 		else:
 			if event.index == _joystick_touch_id:
 				_joystick_touch_id = -1
 				joystick_vector    = Vector2.ZERO
+				if _joystick_visual:
+					# Snap back to default resting position
+					var viewport_size = get_viewport().get_visible_rect().size
+					var default_pos = Vector2(250, viewport_size.y - 250)
+					_joystick_visual.base_pos = default_pos
+					_joystick_visual.drag_pos = default_pos
+					_joystick_visual.active = true
+					_joystick_visual.queue_redraw()
 			elif event.index == _camera_touch_id:
 				_camera_touch_id = -1
 				
@@ -142,10 +168,19 @@ func _input(event: InputEvent) -> void:
 			
 			if dist < JOYSTICK_DEADZONE:
 				joystick_vector = Vector2.ZERO
+				if _joystick_visual:
+					_joystick_visual.drag_pos = _joystick_start
 			elif dist >= JOYSTICK_MAX_RADIUS:
 				joystick_vector = delta_pos.normalized()
+				if _joystick_visual:
+					_joystick_visual.drag_pos = _joystick_start + delta_pos.normalized() * JOYSTICK_MAX_RADIUS
 			else:
 				joystick_vector = delta_pos / JOYSTICK_MAX_RADIUS
+				if _joystick_visual:
+					_joystick_visual.drag_pos = event.position
+			
+			if _joystick_visual:
+				_joystick_visual.queue_redraw()
 				
 		elif event.index == _camera_touch_id:
 			var drag_delta: Vector2 = event.position - _camera_last_pos
@@ -494,4 +529,109 @@ func _play_anim(anim_name: String) -> void:
 	if target_anim != "":
 		if anim_player.current_animation != target_anim:
 			anim_player.play(target_anim)
+
+
+# Setup mobile control nodes dynamically based on orientation
+func _setup_mobile_controls() -> void:
+	var mc = get_node_or_null("MobileControls")
+	if not mc:
+		return
+		
+	var viewport_size = get_viewport().get_visible_rect().size
+	var w = viewport_size.x
+	var h = viewport_size.y
+	
+	# Determine orientation
+	var is_landscape = w > h
+	joystick_zone_max_x = w * 0.4
+	
+	var sprint_btn = mc.get_node_or_null("SprintButton")
+	var sprint_lbl = mc.get_node_or_null("SprintLabel")
+	var attack_btn = mc.get_node_or_null("AttackButton")
+	var attack_lbl = mc.get_node_or_null("AttackLabel")
+	var dodge_btn  = mc.get_node_or_null("DodgeButton")
+	var dodge_lbl  = mc.get_node_or_null("DodgeLabel")
+	var switch_btn = mc.get_node_or_null("SwitchButton")
+	var switch_lbl = mc.get_node_or_null("SwitchLabel")
+	
+	# Reset anchors to prevent warnings when manually setting size and position
+	for lbl in [sprint_lbl, attack_lbl, dodge_lbl, switch_lbl]:
+		if lbl:
+			lbl.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	
+	# Position joystick base permanently
+	var js_center = Vector2(250, h - 250)
+	if _joystick_visual:
+		_joystick_visual.base_pos = js_center
+		_joystick_visual.drag_pos = js_center
+		_joystick_visual.active = true
+		_joystick_visual.queue_redraw()
+		
+	if is_landscape:
+		# Landscape layout placement
+		if attack_btn:
+			attack_btn.position = Vector2(w - 240, h - 180)
+			if attack_lbl:
+				attack_lbl.position = attack_btn.position
+				attack_lbl.size = Vector2(140, 60)
+				
+		if sprint_btn:
+			sprint_btn.position = Vector2(w - 240, h - 320)
+			if sprint_lbl:
+				sprint_lbl.position = sprint_btn.position
+				sprint_lbl.size = Vector2(140, 60)
+				
+		if dodge_btn:
+			dodge_btn.position = Vector2(w - 440, h - 180)
+			if dodge_lbl:
+				dodge_lbl.position = dodge_btn.position
+				dodge_lbl.size = Vector2(140, 60)
+				
+		if switch_btn:
+			switch_btn.position = Vector2(w - 240, 100)
+			if switch_lbl:
+				switch_lbl.position = switch_btn.position
+				switch_lbl.size = Vector2(140, 60)
+	else:
+		# Portrait layout placement (1080x1920 reference)
+		if attack_btn:
+			attack_btn.position = Vector2(w - 240, h - 240)
+			if attack_lbl:
+				attack_lbl.position = attack_btn.position
+				attack_lbl.size = Vector2(140, 60)
+				
+		if sprint_btn:
+			sprint_btn.position = Vector2(w - 240, h - 580)
+			if sprint_lbl:
+				sprint_lbl.position = sprint_btn.position
+				sprint_lbl.size = Vector2(140, 60)
+				
+		if dodge_btn:
+			dodge_btn.position = Vector2(w - 440, h - 240)
+			if dodge_lbl:
+				dodge_lbl.position = dodge_btn.position
+				dodge_lbl.size = Vector2(140, 60)
+				
+		if switch_btn:
+			switch_btn.position = Vector2(w - 240, 262)
+			if switch_lbl:
+				switch_lbl.position = switch_btn.position
+				switch_lbl.size = Vector2(140, 60)
+
+
+# Check if screen coordinate falls inside any active touch button rect
+func _is_touch_on_button(pos: Vector2) -> bool:
+	var mc = get_node_or_null("MobileControls")
+	if not mc:
+		return false
+		
+	var buttons = ["SprintButton", "AttackButton", "DodgeButton", "SwitchButton"]
+	for btn_name in buttons:
+		var btn = mc.get_node_or_null(btn_name)
+		if btn and btn.visible:
+			# TouchScreenButton bounds (140 width, 60 height)
+			var rect = Rect2(btn.position, Vector2(140, 60))
+			if rect.has_point(pos):
+				return true
+	return false
 

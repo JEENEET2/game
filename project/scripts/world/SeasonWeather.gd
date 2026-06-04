@@ -46,7 +46,7 @@ const BLIZZARD_GROUND: Color = Color(0.70, 0.75, 0.80)
 const SKY_TWEEN_DURATION: float = 3.0
 
 var _sky_tween: Tween = null
-var _ground_material: StandardMaterial3D = null
+var _ground_material: Material = null
 
 # =============================================================
 # LIFECYCLE

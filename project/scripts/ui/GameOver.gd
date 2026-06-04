@@ -48,9 +48,11 @@ func show_game_over(cause: String) -> void:
 	print("[GameOver] Game Over Screen Displayed. Cause: %s" % cause_label.text)
 	
 	# Smooth fade-in animation
-	modulate.a = 0.0
-	var tween = create_tween()
-	tween.tween_property(self, "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	$ColorRect.modulate.a = 0.0
+	$VBoxContainer.modulate.a = 0.0
+	var tween = create_tween().set_parallel(true)
+	tween.tween_property($ColorRect, "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property($VBoxContainer, "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _on_retry_pressed() -> void:
